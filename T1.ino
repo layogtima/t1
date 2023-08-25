@@ -9,6 +9,7 @@
 #include <WiFi.h>
 #include <GxEPD2_BW.h>
 #include "w3_ip28pt7b.h" // https://www.dafont.com/w3usdip.font?text=01%3A07+Friday+15th+August&back=theme
+#include <Fonts/FreeMonoBold12pt7b.h> // More fonts; https://github.com/adafruit/Adafruit-GFX-Library/tree/master/Fonts
 #include "w3_ip18pt7b.h" 
 #include "w3_ip14pt7b.h" 
 #include <Preferences.h> // https://github.com/espressif/arduino-esp32/blob/master/libraries/Preferences/src/Preferences.h
@@ -43,11 +44,22 @@ void retrieveWiFiCredentials() {
   preferences.end();
 }
 
-void storeTime() {
-  preferences.begin("time", false);
-  preferences.putString("ssid", ssid);
-  preferences.putString("password", password);
+void storeTime(unsigned long timeEpoch) {
+  preferences.begin("t1", false);
+  preferences.putULong("epoch", timeEpoch);
+  preferences.putULong("updateOn", timeEpoch + 3600);
   preferences.end();
+}
+
+void retrieveTime() {
+  preferences.begin("t1", false);
+  unsigned long epoch = preferences.getULong("epoch", 0);
+  unsigned long updateOn = preferences.getULong("updateOn", 0);
+  
+  if (epoch < updateOn) {
+    epoch += 60;
+    rtc.setTime(epoch);
+  }
 }
 
 void connectToWiFi() {
@@ -59,24 +71,13 @@ void connectToWiFi() {
   }
 }
 
-void setRTC() {
+void getTimeOverInternet() {
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   struct tm timeinfo;
   if (getLocalTime(&timeinfo)) {
     rtc.setTimeStruct(timeinfo);
   }
-}
-
-void activateMemory() {
-  preferences.begin("t1", false);
-  preferences.putInt("epoch", 42);  // Or other relevant value
-  preferences.end();
-}
-
-int retrieveFromMemory() {
-  preferences.begin("t1", false);
-  int epoch = preferences.getInt("epoch", 0);
-  return epoch;
+  storeTime(rtc.getEpoch());
 }
 
 void print_wakeup_reason() {
@@ -94,23 +95,42 @@ void print_wakeup_reason() {
   }
 }
 
+void factoryReset() {
+  storeWiFiCredentials("ssid", "password");
+  preferences.begin("t1", false);
+  preferences.putULong("epoch", 0);
+  preferences.putULong("updateOn", 3600);
+  preferences.end();
+  
+}
+
 void setup() {
   // Basic initialization
   Serial.begin(115200);
   // print_wakeup_reason();
   // esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
+  factoryReset();
+
+  preferences.begin("t1", false);
+  unsigned long epoch = preferences.getULong("epoch", 0);
+  unsigned long updateOn = preferences.getULong("updateOn", 0);
+  Serial.println("????");
   
-  // Connecting to WiFi and setting RTC
-  // storeWiFiCredentials("@manjusstudio", "wifi2020!");
-  connectToWiFi();
-  setRTC();
-  activateMemory();
+  if (epoch == 0 || epoch > updateOn) {
+    connectToWiFi();
+    Serial.println("!!!!");
+    getTimeOverInternet();
+    WiFi.disconnect();
+  }
+  
+  retrieveTime();  
 }
 
 void displayTime() {
+  // retrieveTime();
   display.setRotation(0);
   display.setFont(&w3_ip28pt7b);
-  display.setTextColor(GxEPD_BLACK);
+  display.setTextColor(GxEPD_WHITE);
   int16_t tbx, tby;
   uint16_t tbw, tbh;
   // center the bounding box by transposition of the origin:
@@ -119,9 +139,9 @@ void displayTime() {
   display.setFullWindow();
   display.firstPage();
   do {
-    display.fillScreen(GxEPD_WHITE);
+    display.fillScreen(GxEPD_BLACK);
     display.setCursor(7, y - 40);
-    display.println(rtc.getTime("%H:%M")); // 22:23
+    display.println(rtc.getEpoch()); // 22:23
     
     display.setFont(&w3_ip18pt7b);
     display.setCursor(0, y - 13);
@@ -141,10 +161,10 @@ void displayTime() {
 }
 
 void loop() {
-  display.init(115200, true, 2, false);
-  displayTime();
-  display.hibernate();
-  
-  delay(10000);
-  // esp_deep_sleep_start();
+    display.init(115200, true, 2, false);
+    displayTime();
+    display.hibernate();
+
+    delay(60000);
+    // esp_deep_sleep_start();
 }
