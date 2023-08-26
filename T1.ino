@@ -1,4 +1,3 @@
-// 
 // T1 by Kailash (kaliash@ampere.works), Amit (amit@absurd.industries) and Amartha (amartha@absurd.industries)
 // Based off of GxEPD2_HelloWorld.ino by Jean-Marc Zingg
 //
@@ -30,6 +29,21 @@ ESP32Time rtc(0);
 RTC_DATA_ATTR int bootCount = 0;
 Preferences preferences;
 
+void print_wakeup_reason() {
+  esp_sleep_wakeup_cause_t wakeup_reason;
+
+  wakeup_reason = esp_sleep_get_wakeup_cause();
+
+  switch (wakeup_reason) {
+    case ESP_SLEEP_WAKEUP_EXT0: Serial.println("Wakeup caused by external signal using RTC_IO"); break;
+    case ESP_SLEEP_WAKEUP_EXT1: Serial.println("Wakeup caused by external signal using RTC_CNTL"); break;
+    case ESP_SLEEP_WAKEUP_TIMER: Serial.println("Wakeup caused by timer"); break;
+    case ESP_SLEEP_WAKEUP_TOUCHPAD: Serial.println("Wakeup caused by touchpad"); break;
+    case ESP_SLEEP_WAKEUP_ULP: Serial.println("Wakeup caused by ULP program"); break;
+    default: Serial.printf("Wakeup was not caused by deep sleep: %d\n", wakeup_reason); break;
+  }
+}
+
 void storeWiFiCredentials(const char* ssid, const char* password) {
   preferences.begin("wifi", false);
   preferences.putString("ssid", ssid);
@@ -53,21 +67,12 @@ void storeTime(unsigned long timeEpoch) {
 
 void retrieveTime() {
   preferences.begin("t1", false);
-  unsigned long epoch = preferences.getULong("epoch", 0);
-  unsigned long updateOn = preferences.getULong("updateOn", 0);
+  unsigned long epoch = preferences.getULong("epoch");
+  unsigned long updateOn = preferences.getULong("updateOn");
   
   if (epoch < updateOn) {
-    epoch += 60;
+    // epoch += 60;
     rtc.setTime(epoch);
-  }
-}
-
-void connectToWiFi() {
-  retrieveWiFiCredentials(); // Fetch stored credentials
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(100);
   }
 }
 
@@ -80,23 +85,18 @@ void getTimeOverInternet() {
   storeTime(rtc.getEpoch());
 }
 
-void print_wakeup_reason() {
-  esp_sleep_wakeup_cause_t wakeup_reason;
 
-  wakeup_reason = esp_sleep_get_wakeup_cause();
-
-  switch (wakeup_reason) {
-    case ESP_SLEEP_WAKEUP_EXT0: Serial.println("Wakeup caused by external signal using RTC_IO"); break;
-    case ESP_SLEEP_WAKEUP_EXT1: Serial.println("Wakeup caused by external signal using RTC_CNTL"); break;
-    case ESP_SLEEP_WAKEUP_TIMER: Serial.println("Wakeup caused by timer"); break;
-    case ESP_SLEEP_WAKEUP_TOUCHPAD: Serial.println("Wakeup caused by touchpad"); break;
-    case ESP_SLEEP_WAKEUP_ULP: Serial.println("Wakeup caused by ULP program"); break;
-    default: Serial.printf("Wakeup was not caused by deep sleep: %d\n", wakeup_reason); break;
+void connectToWiFi() {
+  retrieveWiFiCredentials(); // Fetch stored credentials
+  WiFi.mode(WIFI_STA);
+  WiFi.begin("Amit", "helloamit");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(100);
   }
 }
 
 void factoryReset() {
-  storeWiFiCredentials("ssid", "password");
+  storeWiFiCredentials("Amit", "helloamit");
   preferences.begin("t1", false);
   preferences.putULong("epoch", 0);
   preferences.putULong("updateOn", 3600);
@@ -107,18 +107,16 @@ void factoryReset() {
 void setup() {
   // Basic initialization
   Serial.begin(115200);
-  // print_wakeup_reason();
-  // esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
+  print_wakeup_reason();
+  esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
   factoryReset();
 
   preferences.begin("t1", false);
   unsigned long epoch = preferences.getULong("epoch", 0);
   unsigned long updateOn = preferences.getULong("updateOn", 0);
-  Serial.println("????");
-  
+
   if (epoch == 0 || epoch > updateOn) {
     connectToWiFi();
-    Serial.println("!!!!");
     getTimeOverInternet();
     WiFi.disconnect();
   }
@@ -130,7 +128,7 @@ void displayTime() {
   // retrieveTime();
   display.setRotation(0);
   display.setFont(&w3_ip28pt7b);
-  display.setTextColor(GxEPD_WHITE);
+  display.setTextColor(GxEPD_BLACK);
   int16_t tbx, tby;
   uint16_t tbw, tbh;
   // center the bounding box by transposition of the origin:
@@ -139,9 +137,9 @@ void displayTime() {
   display.setFullWindow();
   display.firstPage();
   do {
-    display.fillScreen(GxEPD_BLACK);
+    display.fillScreen(GxEPD_WHITE);
     display.setCursor(7, y - 40);
-    display.println(rtc.getEpoch()); // 22:23
+    display.println(rtc.getTime("%R")); // 22:23
     
     display.setFont(&w3_ip18pt7b);
     display.setCursor(0, y - 13);
@@ -153,7 +151,7 @@ void displayTime() {
     display.setCursor(7, y + 60);
     display.println(rtc.getTime("%d"));    // 14 
     display.setCursor(7, y + 88);
-    display.println(rtc.getTime("%B"));  // Sep 
+    display.println(rtc.getTime("%b %Y"));  // Sep 
 
     // display.setCursor(56, 30);
     // display.println(rtc.getTime(""));   
@@ -164,7 +162,5 @@ void loop() {
     display.init(115200, true, 2, false);
     displayTime();
     display.hibernate();
-
-    delay(60000);
-    // esp_deep_sleep_start();
+    esp_deep_sleep_start();
 }
